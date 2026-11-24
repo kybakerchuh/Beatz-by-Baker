@@ -308,6 +308,8 @@ export default function App() {
   const {
     playbackState,
     tracks,
+    starterVideoIds,
+    playlistsReady,
     currentIndex,
     currentTitle,
     currentVideoId,
@@ -331,16 +333,40 @@ export default function App() {
   currentVideoIdRef.current = currentVideoId;
   const tracksRef = useRef(tracks);
   tracksRef.current = tracks;
+  const starterVideoIdsRef = useRef(starterVideoIds);
+  starterVideoIdsRef.current = starterVideoIds;
 
-  // Ensure at least INITIAL_UNLOCKED_SONGS (5) starter songs are unlocked once playlists load
+  // Ensure every student/user starts with the exact same deterministic INITIAL_UNLOCKED_SONGS (5) starter tracks
   useEffect(() => {
-    if (tracks.length === 0) return;
+    if (!playlistsReady || starterVideoIds.length === 0) return;
     setUnlockedVideoIds((prev) => {
+      const hasAnyProgress =
+        prev.size > INITIAL_UNLOCKED_SONGS ||
+        availableUnlocksRef.current > 0 ||
+        mathAttemptsRef.current.total > 0 ||
+        passedVideoIdsRef.current.size > 0;
+
+      // Refresh untouched starter set so every user shares the exact same first 5 open tracks
+      if (!hasAnyProgress && !userRef.current) {
+        const canonical = new Set(starterVideoIds);
+        const unchanged =
+          prev.size === canonical.size && starterVideoIds.every((id) => prev.has(id));
+        if (unchanged) return prev;
+        saveGuestProgress({
+          unlockedVideoIds: Array.from(canonical),
+          passedVideoIds: Array.from(passedVideoIdsRef.current),
+          availableUnlocks: availableUnlocksRef.current,
+          ostCorrectCount: mathAttemptsRef.current.correct,
+          ostTotalAttempts: mathAttemptsRef.current.total,
+        });
+        return canonical;
+      }
+
       if (prev.size >= INITIAL_UNLOCKED_SONGS) return prev;
       const next = new Set(prev);
-      for (const track of tracks) {
+      for (const id of starterVideoIds) {
         if (next.size >= INITIAL_UNLOCKED_SONGS) break;
-        next.add(track.videoId);
+        next.add(id);
       }
       if (next.size === prev.size) return prev;
       if (userRef.current) {
@@ -362,7 +388,7 @@ export default function App() {
       }
       return next;
     });
-  }, [tracks]);
+  }, [playlistsReady, starterVideoIds]);
 
   // Listen to Firebase Google Auth state
   useEffect(() => {
@@ -379,9 +405,10 @@ export default function App() {
 
       try {
         const cloud = await loadStudentProgress(nextUser);
-        const starterIds = tracksRef.current
-          .slice(0, INITIAL_UNLOCKED_SONGS)
-          .map((t) => t.videoId);
+        const starterIds =
+          starterVideoIdsRef.current.length > 0
+            ? starterVideoIdsRef.current
+            : tracksRef.current.slice(0, INITIAL_UNLOCKED_SONGS).map((t) => t.videoId);
 
         if (cloud) {
           const mergedSet = new Set(cloud.unlockedVideoIds);
@@ -477,9 +504,10 @@ export default function App() {
       await signOutUser();
       clearGuestProgress();
       guestEarnedRef.current = false;
-      const starterIds = tracksRef.current
-        .slice(0, INITIAL_UNLOCKED_SONGS)
-        .map((t) => t.videoId);
+      const starterIds =
+        starterVideoIdsRef.current.length > 0
+          ? starterVideoIdsRef.current
+          : tracksRef.current.slice(0, INITIAL_UNLOCKED_SONGS).map((t) => t.videoId);
       setUnlockedVideoIds(new Set(starterIds));
       setPassedVideoIds(new Set());
       setAvailableUnlocks(0);
@@ -726,6 +754,8 @@ export default function App() {
 
   const totalHits = liveScore.perfect + liveScore.good + liveScore.okay;
   const totalJudged = totalHits + liveScore.miss;
+  const arrowsHitPct =
+    totalJudged > 0 ? Math.round((totalHits / totalJudged) * 100) : 100;
   const rhythmAccuracy =
     totalJudged > 0
       ? Math.round(
@@ -1107,12 +1137,30 @@ export default function App() {
             </div>
 
             <div className="pt-2.5 border-t border-slate-800/80 grid grid-cols-2 gap-y-1 gap-x-3 text-xs font-mono tabular-nums">
-              <div className="flex justify-between text-slate-300">
-                <span className="font-sans text-slate-400">Accuracy</span>
-                <span>{rhythmAccuracy}%</span>
+              <div className="flex justify-between text-slate-200">
+                <span className="font-sans text-slate-400">Arrows Hit</span>
+                <span>{arrowsHitPct}%</span>
               </div>
               <div className="flex justify-between text-slate-300">
-                <span className="font-sans text-slate-400">Best</span>
+                <span className="font-sans text-slate-400">Accuracy</span>
+                <span
+                  className={
+                    totalJudged > 0 && rhythmAccuracy >= 80
+                      ? 'text-emerald-300'
+                      : undefined
+                  }
+                >
+                  {rhythmAccuracy}%
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span className="font-sans text-slate-400">Hits / Total</span>
+                <span>
+                  {totalHits}/{totalJudged}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-300">
+                <span className="font-sans text-slate-400">Best Streak</span>
                 <span>{liveScore.maxCombo}</span>
               </div>
               <div className="flex justify-between text-amber-300">

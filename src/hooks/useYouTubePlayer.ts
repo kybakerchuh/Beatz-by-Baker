@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CUSTOM_SONGS, PLAYLIST_OPTIONS } from '../config/songs';
+import { CUSTOM_SONGS, INITIAL_UNLOCKED_SONGS, PLAYLIST_OPTIONS } from '../config/songs';
 
 export interface PlaylistTrack {
   index: number; // Unified shuffled index across all merged playlists (0 .. N-1)
@@ -153,7 +153,7 @@ function fetchPlaylistIdsOnce(playlistId: string): Promise<string[]> {
     timeoutTimer = window.setTimeout(() => {
       const ids = metaPlayer?.getPlaylist?.() || [];
       cleanup(ids);
-    }, 12000);
+    }, 8000);
 
     try {
       metaPlayer = new window.YT.Player(tempSlotId, {
@@ -210,6 +210,42 @@ async function fetchPlaylistIdsWithRetry(playlistId: string): Promise<string[]> 
   return fetchPlaylistIdsOnce(playlistId);
 }
 
+/**
+ * Picks the exact same deterministic starter tracks spread across both playlists
+ * so every student/user starts with identical open tracks.
+ */
+function pickDeterministicStarterIds(
+  listsByPlaylist: { playlistId: string; label: string; ids: string[] }[],
+  count: number
+): string[] {
+  const chosen: string[] = [];
+  const seen = new Set<string>();
+  const addId = (id?: string) => {
+    if (id && !seen.has(id) && chosen.length < count) {
+      seen.add(id);
+      chosen.push(id);
+    }
+  };
+
+  if (listsByPlaylist.length >= 2) {
+    const p1 = listsByPlaylist[0].ids;
+    const p2 = listsByPlaylist[1].ids;
+    if (p1.length > 0) addId(p1[0]);
+    if (p2.length > 0) addId(p2[0]);
+    if (p1.length > 2) addId(p1[Math.floor(p1.length / 3)]);
+    if (p2.length > 2) addId(p2[Math.floor(p2.length / 2)]);
+    if (p1.length > 4) addId(p1[Math.floor((2 * p1.length) / 3)]);
+  }
+
+  for (const list of listsByPlaylist) {
+    for (const id of list.ids) {
+      if (chosen.length >= count) break;
+      addId(id);
+    }
+  }
+  return chosen;
+}
+
 /** Fisher-Yates shuffle */
 function shuffleArray<T>(items: T[]): T[] {
   const arr = [...items];
@@ -243,12 +279,17 @@ export function useYouTubePlayer({
 
   const [playbackState, setPlaybackState] = useState<PlayerPlaybackState>('loading');
   const [tracks, setTracks] = useState<PlaylistTrack[]>([]);
+  const [starterVideoIds, setStarterVideoIds] = useState<string[]>([]);
+  const [playlistsReady, setPlaylistsReady] = useState<boolean>(false);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [currentTitle, setCurrentTitle] = useState<string>('Loading playlists...');
   const [currentVideoId, setCurrentVideoId] = useState<string>('');
   const [durationSec, setDurationSec] = useState<number>(180);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [skipNotice, setSkipNotice] = useState<string | null>(null);
+
+  const starterVideoIdsRef = useRef<string[]>([]);
+  starterVideoIdsRef.current = starterVideoIds;
 
   const titleCacheRef = useRef<Record<string, string>>(loadTitleCache());
   const endedGuardRef = useRef<boolean>(false);
@@ -341,14 +382,25 @@ export function useYouTubePlayer({
         });
       });
 
-      // Sort by random weights so songs from both playlists and all genres are evenly shuffled
-      rawItems.sort(
-        (a, b) =>
-          (randomWeightRef.current[a.videoId] ?? 0) -
-          (randomWeightRef.current[b.videoId] ?? 0)
-      );
+      const starterIds = pickDeterministicStarterIds(listsByPlaylist, INITIAL_UNLOCKED_SONGS);
+      const starterOrder = new Map<string, number>();
+      starterIds.forEach((id, idx) => starterOrder.set(id, idx));
 
-      const combined: PlaylistTrack[] = rawItems.map((item, unifiedIndex) => {
+      const starterItems = rawItems
+        .filter((item) => starterOrder.has(item.videoId))
+        .sort((a, b) => (starterOrder.get(a.videoId) ?? 0) - (starterOrder.get(b.videoId) ?? 0));
+
+      const restItems = rawItems
+        .filter((item) => !starterOrder.has(item.videoId))
+        .sort(
+          (a, b) =>
+            (randomWeightRef.current[a.videoId] ?? 0) -
+            (randomWeightRef.current[b.videoId] ?? 0)
+        );
+
+      const orderedItems = [...starterItems, ...restItems];
+
+      const combined: PlaylistTrack[] = orderedItems.map((item, unifiedIndex) => {
         const override = getOverride(unifiedIndex, item.videoId);
         const cachedTitle = titleCacheRef.current[item.videoId];
         return {
@@ -363,6 +415,7 @@ export function useYouTubePlayer({
         };
       });
 
+      setStarterVideoIds(starterIds);
       setTracks(combined);
       hydrateTitlesInBatches(combined);
 
@@ -393,7 +446,10 @@ export function useYouTubePlayer({
   const reshuffleTracks = useCallback(() => {
     setTracks((prev) => {
       if (prev.length === 0) return prev;
-      const shuffled = shuffleArray(prev).map((t, idx) => {
+      const starterSet = new Set(starterVideoIdsRef.current);
+      const pinnedStarters = prev.filter((t) => starterSet.has(t.videoId));
+      const rest = shuffleArray(prev.filter((t) => !starterSet.has(t.videoId)));
+      const shuffled = [...pinnedStarters, ...rest].map((t, idx) => {
         randomWeightRef.current[t.videoId] = idx / prev.length;
         return { ...t, index: idx };
       });
@@ -488,8 +544,9 @@ export function useYouTubePlayer({
         });
       }
       if (lists.length > 0) {
-        // Only cue the initial shuffled track once primary playlist IDs are secured
+        // Only cue the initial track and mark ready once both playlists have resolved
         const canCue = primaryDone && secondaryDone;
+        if (canCue) setPlaylistsReady(true);
         buildCombinedTracks(lists, canCue);
       }
     };
@@ -509,6 +566,8 @@ export function useYouTubePlayer({
 
       setPlaybackState('loading');
       setTracks([]);
+      setStarterVideoIds([]);
+      setPlaylistsReady(false);
       setCurrentIndex(0);
       setCurrentTitle('Loading & shuffling playlists...');
       setErrorMessage(null);
@@ -826,6 +885,8 @@ export function useYouTubePlayer({
   return {
     playbackState,
     tracks,
+    starterVideoIds,
+    playlistsReady,
     currentIndex,
     currentTitle,
     currentVideoId,

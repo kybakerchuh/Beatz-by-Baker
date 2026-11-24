@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   DIFFICULTIES,
   DifficultyId,
@@ -126,7 +126,7 @@ export const RhythmHighway: React.FC<RhythmHighwayProps> = ({
   const particlesRef = useRef<HitParticle[]>([]);
   const feedbackIdRef = useRef(1);
 
-  const scoreStateRef = useRef<LiveScoreState>({
+  const initialScoreState: LiveScoreState = {
     score: 0,
     combo: 0,
     maxCombo: 0,
@@ -136,7 +136,9 @@ export const RhythmHighway: React.FC<RhythmHighwayProps> = ({
     okay: 0,
     miss: 0,
     lastJudgement: null,
-  });
+  };
+  const scoreStateRef = useRef<LiveScoreState>(initialScoreState);
+  const [hudScore, setHudScore] = useState<LiveScoreState>(initialScoreState);
 
   // Smooth audio-clock tracking locked to player.getCurrentTime()
   const smoothTimeRef = useRef<number>(0);
@@ -173,6 +175,7 @@ export const RhythmHighway: React.FC<RhythmHighwayProps> = ({
       lastJudgement: null,
     };
     scoreStateRef.current = initial;
+    setHudScore(initial);
     onScoreChange(initial);
   }, [notes, resetToken, getCurrentTime, onScoreChange]);
 
@@ -207,6 +210,7 @@ export const RhythmHighway: React.FC<RhythmHighwayProps> = ({
         lastJudgement: judgement,
       };
       scoreStateRef.current = updated;
+      setHudScore(updated);
       onScoreChange(updated);
 
       const labelMap = {
@@ -603,6 +607,18 @@ export const RhythmHighway: React.FC<RhythmHighwayProps> = ({
     pressedLanesRef.current = [false, false, false, false];
   };
 
+  const totalHits = hudScore.perfect + hudScore.good + hudScore.okay;
+  const totalJudged = totalHits + hudScore.miss;
+  const arrowsHitPct = totalJudged > 0 ? Math.round((totalHits / totalJudged) * 100) : 100;
+  const weightedAccPct =
+    totalJudged > 0
+      ? Math.round(
+          ((hudScore.perfect + hudScore.good * 0.75 + hudScore.okay * 0.4) / totalJudged) *
+            100
+        )
+      : 100;
+  const isPassingPace = totalJudged > 0 && weightedAccPct >= 80;
+
   return (
     <div className="relative w-full h-full flex items-center justify-center select-none">
       <canvas
@@ -613,6 +629,43 @@ export const RhythmHighway: React.FC<RhythmHighwayProps> = ({
         className="w-full h-full block rounded-xl border border-slate-800/90 shadow-2xl cursor-pointer touch-none"
         aria-label="4-lane arrow key rhythm highway"
       />
+
+      {/* Live Arrows Hit & Accuracy HUD */}
+      <div className="absolute top-0 inset-x-0 z-10 px-3.5 py-2.5 flex items-center justify-between gap-2 bg-gradient-to-b from-[#09090E]/90 via-[#09090E]/65 to-transparent rounded-t-xl pointer-events-none">
+        <div className="flex items-baseline gap-1.5 font-mono tabular-nums">
+          <span className="font-sans text-[11px] font-medium text-slate-400">
+            Arrows Hit
+          </span>
+          <span className="text-sm font-bold text-slate-100">{arrowsHitPct}%</span>
+          <span className="text-[11px] text-slate-400">
+            ({totalHits}/{totalJudged})
+          </span>
+        </div>
+
+        <div className="flex items-baseline gap-1.5 font-mono tabular-nums">
+          <span className="font-sans text-[11px] font-medium text-slate-400">
+            Accuracy
+          </span>
+          <span
+            className={`text-sm font-bold ${
+              totalJudged === 0
+                ? 'text-slate-200'
+                : isPassingPace
+                ? 'text-emerald-300'
+                : 'text-amber-300'
+            }`}
+          >
+            {weightedAccPct}%
+          </span>
+          <span
+            className={`font-sans text-[10px] font-semibold ${
+              isPassingPace ? 'text-emerald-400' : 'text-slate-500'
+            }`}
+          >
+            {isPassingPace ? 'Pass ✓' : '80% Pass'}
+          </span>
+        </div>
+      </div>
 
       {/* Non-playing Overlay Prompt */}
       {playbackState !== 'playing' && !isGatewayLocked && (
