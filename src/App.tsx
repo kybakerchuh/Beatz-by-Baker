@@ -66,6 +66,7 @@ function loadSavedTopic(): OstTopicId {
 
 interface GuestProgress {
   unlockedVideoIds: string[];
+  passedVideoIds: string[];
   availableUnlocks: number;
   ostCorrectCount: number;
   ostTotalAttempts: number;
@@ -78,6 +79,7 @@ function loadGuestProgress(): GuestProgress | null {
     const parsed = JSON.parse(raw);
     return {
       unlockedVideoIds: Array.isArray(parsed.unlockedVideoIds) ? parsed.unlockedVideoIds : [],
+      passedVideoIds: Array.isArray(parsed.passedVideoIds) ? parsed.passedVideoIds : [],
       availableUnlocks: Math.max(0, Number(parsed.availableUnlocks) || 0),
       ostCorrectCount: Math.max(0, Number(parsed.ostCorrectCount) || 0),
       ostTotalAttempts: Math.max(0, Number(parsed.ostTotalAttempts) || 0),
@@ -131,10 +133,14 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState<boolean>(false);
 
-  // Track unlocks by YouTube videoId so random shuffling preserves unlocked songs
+  // Track unlocks & 80%+ accuracy passes by YouTube videoId
   const [unlockedVideoIds, setUnlockedVideoIds] = useState<Set<string>>(() => {
     const guest = loadGuestProgress();
     return new Set(guest?.unlockedVideoIds || []);
+  });
+  const [passedVideoIds, setPassedVideoIds] = useState<Set<string>>(() => {
+    const guest = loadGuestProgress();
+    return new Set(guest?.passedVideoIds || []);
   });
   const [availableUnlocks, setAvailableUnlocks] = useState<number>(() => {
     const guest = loadGuestProgress();
@@ -168,9 +174,11 @@ export default function App() {
   userRef.current = user;
   const unlockedVideoIdsRef = useRef<Set<string>>(unlockedVideoIds);
   unlockedVideoIdsRef.current = unlockedVideoIds;
+  const passedVideoIdsRef = useRef<Set<string>>(passedVideoIds);
+  passedVideoIdsRef.current = passedVideoIds;
   const availableUnlocksRef = useRef<number>(availableUnlocks);
   availableUnlocksRef.current = availableUnlocks;
-  const mathAttemptsRef = useRef(mathAttempts);
+  const mathAttemptsRef = useRef<{ correct: number; total: number }>(mathAttempts);
   mathAttemptsRef.current = mathAttempts;
   const difficultyRef = useRef<DifficultyId>(difficulty);
   difficultyRef.current = difficulty;
@@ -196,13 +204,16 @@ export default function App() {
     (
       nextUnlocked: Set<string>,
       nextAvailable: number,
-      nextMath: { correct: number; total: number }
+      nextMath: { correct: number; total: number },
+      nextPassed: Set<string> = passedVideoIdsRef.current
     ) => {
       const idsArray = Array.from(nextUnlocked);
+      const passedArray = Array.from(nextPassed);
       const activeUser = userRef.current;
       if (activeUser) {
         saveStudentProgress(activeUser, {
           unlockedVideoIds: idsArray,
+          passedVideoIds: passedArray,
           availableUnlocks: nextAvailable,
           ostCorrectCount: nextMath.correct,
           ostTotalAttempts: nextMath.total,
@@ -212,6 +223,7 @@ export default function App() {
       } else {
         saveGuestProgress({
           unlockedVideoIds: idsArray,
+          passedVideoIds: passedArray,
           availableUnlocks: nextAvailable,
           ostCorrectCount: nextMath.correct,
           ostTotalAttempts: nextMath.total,
@@ -229,7 +241,7 @@ export default function App() {
         ? Math.round(
             ((score.perfect + score.good * 0.75 + score.okay * 0.4) / totalNotes) * 100
           )
-        : 100;
+        : 0;
 
     setRoundStats({
       trackTitle: currentTitleRef.current,
@@ -243,6 +255,21 @@ export default function App() {
 
     const activeUser = userRef.current;
     const vid = currentVideoIdRef.current;
+
+    if (vid && totalNotes > 0 && hitAccuracy >= 80 && !passedVideoIdsRef.current.has(vid)) {
+      const nextPassed = new Set(passedVideoIdsRef.current);
+      nextPassed.add(vid);
+      passedVideoIdsRef.current = nextPassed;
+      setPassedVideoIds(nextPassed);
+      if (!activeUser) guestEarnedRef.current = true;
+      persistProgress(
+        unlockedVideoIdsRef.current,
+        availableUnlocksRef.current,
+        mathAttemptsRef.current,
+        nextPassed
+      );
+    }
+
     if (activeUser && vid && (totalNotes > 0 || score.score > 0)) {
       recordSongScoreToLeaderboard({
         user: activeUser,
@@ -319,6 +346,7 @@ export default function App() {
       if (userRef.current) {
         saveStudentProgress(userRef.current, {
           unlockedVideoIds: Array.from(next),
+          passedVideoIds: Array.from(passedVideoIdsRef.current),
           availableUnlocks: availableUnlocksRef.current,
           ostCorrectCount: mathAttemptsRef.current.correct,
           ostTotalAttempts: mathAttemptsRef.current.total,
@@ -326,6 +354,7 @@ export default function App() {
       } else {
         saveGuestProgress({
           unlockedVideoIds: Array.from(next),
+          passedVideoIds: Array.from(passedVideoIdsRef.current),
           availableUnlocks: availableUnlocksRef.current,
           ostCorrectCount: mathAttemptsRef.current.correct,
           ostTotalAttempts: mathAttemptsRef.current.total,
@@ -356,12 +385,14 @@ export default function App() {
 
         if (cloud) {
           const mergedSet = new Set(cloud.unlockedVideoIds);
+          const mergedPassed = new Set(cloud.passedVideoIds || []);
           let nextAvailable = cloud.availableUnlocks;
           let nextCorrect = cloud.ostCorrectCount;
           let nextTotal = cloud.ostTotalAttempts;
 
           if (guestEarnedRef.current) {
             unlockedVideoIdsRef.current.forEach((id) => mergedSet.add(id));
+            passedVideoIdsRef.current.forEach((id) => mergedPassed.add(id));
             nextAvailable += availableUnlocksRef.current;
             nextCorrect += mathAttemptsRef.current.correct;
             nextTotal += mathAttemptsRef.current.total;
@@ -377,12 +408,14 @@ export default function App() {
 
           const nextMath = { correct: nextCorrect, total: nextTotal };
           setUnlockedVideoIds(mergedSet);
+          setPassedVideoIds(mergedPassed);
           setAvailableUnlocks(nextAvailable);
           setMathAttempts(nextMath);
           clearGuestProgress();
 
           await saveStudentProgress(nextUser, {
             unlockedVideoIds: Array.from(mergedSet),
+            passedVideoIds: Array.from(mergedPassed),
             availableUnlocks: nextAvailable,
             ostCorrectCount: nextCorrect,
             ostTotalAttempts: nextTotal,
@@ -390,6 +423,7 @@ export default function App() {
         } else {
           // First-time sign-in: seed Firestore from current starter + any guest session progress
           const initialSet = new Set(unlockedVideoIdsRef.current);
+          const initialPassed = new Set(passedVideoIdsRef.current);
           if (initialSet.size < INITIAL_UNLOCKED_SONGS) {
             for (const id of starterIds) {
               if (initialSet.size >= INITIAL_UNLOCKED_SONGS) break;
@@ -397,11 +431,13 @@ export default function App() {
             }
           }
           setUnlockedVideoIds(initialSet);
+          setPassedVideoIds(initialPassed);
           guestEarnedRef.current = false;
           clearGuestProgress();
 
           await saveStudentProgress(nextUser, {
             unlockedVideoIds: Array.from(initialSet),
+            passedVideoIds: Array.from(initialPassed),
             availableUnlocks: availableUnlocksRef.current,
             ostCorrectCount: mathAttemptsRef.current.correct,
             ostTotalAttempts: mathAttemptsRef.current.total,
@@ -445,6 +481,7 @@ export default function App() {
         .slice(0, INITIAL_UNLOCKED_SONGS)
         .map((t) => t.videoId);
       setUnlockedVideoIds(new Set(starterIds));
+      setPassedVideoIds(new Set());
       setAvailableUnlocks(0);
       setMathAttempts({ correct: 0, total: 0 });
       setGatewaySolved(false);
@@ -861,8 +898,14 @@ export default function App() {
             </div>
             <div className="mt-2.5 flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-slate-200 truncate" title={currentTitle}>
-                  {currentTitle}
+                <p className="text-xs font-semibold text-slate-200 truncate flex items-center gap-1.5" title={currentTitle}>
+                  {currentVideoId && passedVideoIds.has(currentVideoId) && (
+                    <CheckCircle2
+                      className="w-3.5 h-3.5 text-emerald-400 shrink-0"
+                      aria-label="Passed (80%+ accuracy)"
+                    />
+                  )}
+                  <span className="truncate">{currentTitle}</span>
                 </p>
                 <p className="text-[11px] text-slate-400 truncate">
                   Track #{currentIndex + 1}
@@ -944,6 +987,7 @@ export default function App() {
                 filteredTracks.map((track, listIdx) => {
                   const isActive = track.videoId === currentVideoId;
                   const isLockedTrack = !unlockedVideoIds.has(track.videoId);
+                  const isPassedTrack = passedVideoIds.has(track.videoId);
                   const prevTrack = listIdx > 0 ? filteredTracks[listIdx - 1] : null;
                   const showLockedDivider =
                     isLockedTrack && prevTrack !== null && unlockedVideoIds.has(prevTrack.videoId);
@@ -960,7 +1004,7 @@ export default function App() {
                         type="button"
                         disabled={isGatewayLocked}
                         onClick={() => handleSelectTrack(track.index)}
-                        className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs transition-colors ${
+                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left text-xs transition-colors ${
                           isLockedTrack
                             ? availableUnlocks > 0
                               ? 'text-amber-200/90 hover:bg-amber-400/15 border border-amber-400/25'
@@ -970,6 +1014,12 @@ export default function App() {
                             : 'text-slate-300 hover:bg-slate-800/60 border border-transparent'
                         } disabled:opacity-45 disabled:pointer-events-none`}
                       >
+                        {isPassedTrack && (
+                          <CheckCircle2
+                            className="w-3.5 h-3.5 text-emerald-400 shrink-0"
+                            aria-label="Passed with 80%+ accuracy"
+                          />
+                        )}
                         <span className="font-mono tabular-nums text-[11px] text-slate-500 w-7 shrink-0">
                           {String(track.index + 1).padStart(3, '0')}
                         </span>
@@ -1208,7 +1258,8 @@ export default function App() {
               ))}
             </div>
             <p className="text-[11px] text-slate-400 leading-relaxed">
-              5 starter songs are open. Solve any OST question to unlock whichever song you pick.
+              5 starter songs are open. Hit 80%+ accuracy to earn a Pass check, and solve OST
+              questions to unlock new tracks.
               {!user && isFirebaseConfigured
                 ? ' Sign in with Google to save progress and join the leaderboard.'
                 : ''}

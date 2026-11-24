@@ -41,6 +41,7 @@ service cloud.firestore {
           'uid',
           'displayName',
           'unlockedVideoIds',
+          'passedVideoIds',
           'availableUnlocks',
           'ostCorrectCount',
           'ostTotalAttempts',
@@ -56,6 +57,11 @@ service cloud.firestore {
         && data.unlockedVideoIds is list
         && data.unlockedVideoIds.size() <= 300
         && (data.unlockedVideoIds.size() == 0 || (data.unlockedVideoIds[0] is string && data.unlockedVideoIds[0].size() >= 1 && data.unlockedVideoIds[0].size() <= 32))
+        && (!('passedVideoIds' in data) || (
+          data.passedVideoIds is list
+          && data.passedVideoIds.size() <= 300
+          && (data.passedVideoIds.size() == 0 || (data.passedVideoIds[0] is string && data.passedVideoIds[0].size() >= 1 && data.passedVideoIds[0].size() <= 32))
+        ))
         && data.availableUnlocks is int
         && data.availableUnlocks >= 0
         && data.availableUnlocks <= 500
@@ -203,6 +209,7 @@ service cloud.firestore {
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'displayName',
           'unlockedVideoIds',
+          'passedVideoIds',
           'availableUnlocks',
           'ostCorrectCount',
           'ostTotalAttempts',

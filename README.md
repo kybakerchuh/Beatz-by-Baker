@@ -11,7 +11,7 @@ Arrow-key (`←`, `↓`, `↑`, `→`) 4-lane rhythm game synced to shuffled You
 ## Local Development
 
 ```bash
-npm install
+npm install --legacy-peer-deps
 npm run dev
 ```
 

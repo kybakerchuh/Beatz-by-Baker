@@ -113,7 +113,8 @@ export const MathGatewayModal: React.FC<MathGatewayModalProps> = ({
             totalNotes) *
             100
         )
-      : 100;
+      : 0;
+  const songPassed = totalNotes > 0 && hitAccuracy >= 80;
 
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -193,7 +194,26 @@ export const MathGatewayModal: React.FC<MathGatewayModalProps> = ({
               </div>
               <div>
                 <span className="text-slate-400 block text-[11px] font-sans">Rhythm Acc</span>
-                <span className="text-cyan-300 font-bold text-sm">{hitAccuracy}%</span>
+                <span
+                  className={`font-bold text-sm ${
+                    songPassed ? 'text-emerald-300' : 'text-cyan-300'
+                  }`}
+                >
+                  {hitAccuracy}%
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px] font-sans">Song Status</span>
+                {songPassed ? (
+                  <span className="inline-flex items-center gap-1 text-emerald-300 font-bold text-sm font-sans">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Passed</span>
+                  </span>
+                ) : (
+                  <span className="text-slate-400 font-medium text-xs font-sans">
+                    Need 80%
+                  </span>
+                )}
               </div>
             </div>
           )}

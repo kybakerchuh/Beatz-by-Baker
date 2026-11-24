@@ -22,6 +22,10 @@
           "type": "array",
           "description": "Bounded list of unlocked YouTube video IDs."
         },
+        "passedVideoIds": {
+          "type": "array",
+          "description": "Bounded list of YouTube video IDs passed with >= 80% rhythm accuracy."
+        },
         "availableUnlocks": {
           "type": "integer",
           "description": "Unspent song unlock credits earned from OST questions."

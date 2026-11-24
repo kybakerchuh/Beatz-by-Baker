@@ -138,6 +138,7 @@ export interface StudentProgressRecord {
   uid: string;
   displayName: string;
   unlockedVideoIds: string[];
+  passedVideoIds: string[];
   availableUnlocks: number;
   ostCorrectCount: number;
   ostTotalAttempts: number;
@@ -203,6 +204,9 @@ export async function loadStudentProgress(
       unlockedVideoIds: Array.isArray(data.unlockedVideoIds)
         ? sanitizeVideoIds(data.unlockedVideoIds)
         : [],
+      passedVideoIds: Array.isArray(data.passedVideoIds)
+        ? sanitizeVideoIds(data.passedVideoIds)
+        : [],
       availableUnlocks: Math.max(0, Math.min(500, Math.floor(Number(data.availableUnlocks) || 0))),
       ostCorrectCount: Math.max(0, Math.min(100000, Math.floor(Number(data.ostCorrectCount) || 0))),
       ostTotalAttempts: Math.max(0, Math.min(100000, Math.floor(Number(data.ostTotalAttempts) || 0))),
@@ -217,6 +221,7 @@ export async function saveStudentProgress(
   user: User,
   progress: {
     unlockedVideoIds: string[];
+    passedVideoIds: string[];
     availableUnlocks: number;
     ostCorrectCount: number;
     ostTotalAttempts: number;
@@ -226,6 +231,7 @@ export async function saveStudentProgress(
   const userPath = `users/${user.uid}`;
   const displayName = sanitizeDisplayName(user);
   const cleanIds = sanitizeVideoIds(progress.unlockedVideoIds);
+  const cleanPassedIds = sanitizeVideoIds(progress.passedVideoIds);
   const availableUnlocks = Math.max(0, Math.min(500, Math.floor(progress.availableUnlocks)));
   const ostCorrectCount = Math.max(0, Math.min(100000, Math.floor(progress.ostCorrectCount)));
   const ostTotalAttempts = Math.max(0, Math.min(100000, Math.floor(progress.ostTotalAttempts)));
@@ -238,6 +244,7 @@ export async function saveStudentProgress(
         uid: user.uid,
         displayName,
         unlockedVideoIds: cleanIds,
+        passedVideoIds: cleanPassedIds,
         availableUnlocks,
         ostCorrectCount,
         ostTotalAttempts,
@@ -251,6 +258,7 @@ export async function saveStudentProgress(
           uid: user.uid,
           displayName,
           unlockedVideoIds: cleanIds,
+          passedVideoIds: cleanPassedIds,
           availableUnlocks,
           ostCorrectCount,
           ostTotalAttempts,
