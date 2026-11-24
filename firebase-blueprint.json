@@ -1,0 +1,218 @@
+{
+  "entities": {
+    "UserProgress": {
+      "title": "UserProgress",
+      "description": "Private student progress including unlocked YouTube video IDs and OST question stats.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the student.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Student display name.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "unlockedVideoIds": {
+          "type": "array",
+          "description": "Bounded list of unlocked YouTube video IDs."
+        },
+        "availableUnlocks": {
+          "type": "integer",
+          "description": "Unspent song unlock credits earned from OST questions."
+        },
+        "ostCorrectCount": {
+          "type": "integer",
+          "description": "Total OST questions answered correctly."
+        },
+        "ostTotalAttempts": {
+          "type": "integer",
+          "description": "Total OST question attempts."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp."
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "unlockedVideoIds",
+        "availableUnlocks",
+        "ostCorrectCount",
+        "ostTotalAttempts",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public student leaderboard stats (no PII) for OST questions correct and overall song high scores.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the student.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Student display name shown on leaderboard.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Optional public avatar URL.",
+          "maxLength": 500
+        },
+        "ostCorrectCount": {
+          "type": "integer",
+          "description": "Total OST questions answered correctly."
+        },
+        "ostTotalAttempts": {
+          "type": "integer",
+          "description": "Total OST question attempts."
+        },
+        "bestSingleScore": {
+          "type": "integer",
+          "description": "Highest single-song score achieved."
+        },
+        "totalHighScore": {
+          "type": "integer",
+          "description": "Sum of best high scores across all played songs."
+        },
+        "songsPlayedCount": {
+          "type": "integer",
+          "description": "Number of distinct songs with recorded high scores."
+        },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Explicit visibility marker for public leaderboard listing."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "ostCorrectCount",
+        "ostTotalAttempts",
+        "bestSingleScore",
+        "totalHighScore",
+        "songsPlayedCount",
+        "isPublic",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SongHighScore": {
+      "title": "SongHighScore",
+      "description": "Per-student, per-song best score record across all playlist tracks.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Student display name.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "videoId": {
+          "type": "string",
+          "description": "YouTube video ID.",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "songTitle": {
+          "type": "string",
+          "description": "Display title of the song.",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "highScore": {
+          "type": "integer",
+          "description": "Best score achieved on this song."
+        },
+        "maxCombo": {
+          "type": "integer",
+          "description": "Best combo streak on this song."
+        },
+        "accuracy": {
+          "type": "integer",
+          "description": "Hit accuracy percentage (0-100)."
+        },
+        "difficulty": {
+          "type": "string",
+          "enum": ["easy", "medium", "hard", "expert"],
+          "description": "Difficulty played for the high score."
+        },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Explicit visibility marker for leaderboard queries."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "videoId",
+        "songTitle",
+        "highScore",
+        "maxCombo",
+        "accuracy",
+        "difficulty",
+        "isPublic",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "UserProgress" },
+      "description": "Private per-student progress document storing unlocked songs and OST progress."
+    },
+    "/leaderboard/{userId}": {
+      "schema": { "$ref": "LeaderboardEntry" },
+      "description": "Public student leaderboard stats for OST correct count and total/best high scores."
+    },
+    "/songScores/{scoreId}": {
+      "schema": { "$ref": "SongHighScore" },
+      "description": "Per-song high scores keyed by {videoId}__{userId}."
+    }
+  }
+}

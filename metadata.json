@@ -1,0 +1,8 @@
+{
+  "name": "Beatz by Baker",
+  "description": "Arrow-key 4-lane rhythm game synced to YouTube playlists with Ohio State Test (OST) Algebra 1 math gateways.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

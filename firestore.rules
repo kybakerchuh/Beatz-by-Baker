@@ -1,0 +1,272 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidUserProgress(data) {
+      return data.keys().hasAll([
+          'uid',
+          'displayName',
+          'unlockedVideoIds',
+          'availableUnlocks',
+          'ostCorrectCount',
+          'ostTotalAttempts',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'displayName',
+          'unlockedVideoIds',
+          'availableUnlocks',
+          'ostCorrectCount',
+          'ostTotalAttempts',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.uid is string
+        && data.uid == request.auth.uid
+        && isValidId(data.uid)
+        && data.displayName is string
+        && data.displayName.size() >= 1
+        && data.displayName.size() <= 80
+        && data.unlockedVideoIds is list
+        && data.unlockedVideoIds.size() <= 300
+        && (data.unlockedVideoIds.size() == 0 || (data.unlockedVideoIds[0] is string && data.unlockedVideoIds[0].size() >= 1 && data.unlockedVideoIds[0].size() <= 32))
+        && data.availableUnlocks is int
+        && data.availableUnlocks >= 0
+        && data.availableUnlocks <= 500
+        && data.ostCorrectCount is int
+        && data.ostCorrectCount >= 0
+        && data.ostCorrectCount <= 100000
+        && data.ostTotalAttempts is int
+        && data.ostTotalAttempts >= 0
+        && data.ostTotalAttempts <= 100000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidLeaderboardEntry(data) {
+      return data.keys().hasAll([
+          'uid',
+          'displayName',
+          'ostCorrectCount',
+          'ostTotalAttempts',
+          'bestSingleScore',
+          'totalHighScore',
+          'songsPlayedCount',
+          'isPublic',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid',
+          'displayName',
+          'photoURL',
+          'ostCorrectCount',
+          'ostTotalAttempts',
+          'bestSingleScore',
+          'totalHighScore',
+          'songsPlayedCount',
+          'isPublic',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.uid is string
+        && data.uid == request.auth.uid
+        && isValidId(data.uid)
+        && data.displayName is string
+        && data.displayName.size() >= 1
+        && data.displayName.size() <= 80
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500))
+        && data.ostCorrectCount is int
+        && data.ostCorrectCount >= 0
+        && data.ostCorrectCount <= 100000
+        && data.ostTotalAttempts is int
+        && data.ostTotalAttempts >= 0
+        && data.ostTotalAttempts <= 100000
+        && data.bestSingleScore is int
+        && data.bestSingleScore >= 0
+        && data.bestSingleScore <= 10000000
+        && data.totalHighScore is int
+        && data.totalHighScore >= 0
+        && data.totalHighScore <= 500000000
+        && data.songsPlayedCount is int
+        && data.songsPlayedCount >= 0
+        && data.songsPlayedCount <= 1000
+        && data.isPublic is bool
+        && data.isPublic == true
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSongHighScore(data) {
+      return data.keys().hasAll([
+          'userId',
+          'displayName',
+          'videoId',
+          'songTitle',
+          'highScore',
+          'maxCombo',
+          'accuracy',
+          'difficulty',
+          'isPublic',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userId',
+          'displayName',
+          'videoId',
+          'songTitle',
+          'highScore',
+          'maxCombo',
+          'accuracy',
+          'difficulty',
+          'isPublic',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.userId is string
+        && data.userId == request.auth.uid
+        && isValidId(data.userId)
+        && data.displayName is string
+        && data.displayName.size() >= 1
+        && data.displayName.size() <= 80
+        && data.videoId is string
+        && data.videoId.size() >= 1
+        && data.videoId.size() <= 32
+        && data.videoId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.songTitle is string
+        && data.songTitle.size() >= 1
+        && data.songTitle.size() <= 160
+        && data.highScore is int
+        && data.highScore >= 0
+        && data.highScore <= 10000000
+        && data.maxCombo is int
+        && data.maxCombo >= 0
+        && data.maxCombo <= 50000
+        && data.accuracy is int
+        && data.accuracy >= 0
+        && data.accuracy <= 100
+        && data.difficulty in ['easy', 'medium', 'hard', 'expert']
+        && data.isPublic is bool
+        && data.isPublic == true
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Startup connection check document
+    match /test/{docId} {
+      allow get: if isValidId(docId) && docId == 'connection';
+      allow list, create, update, delete: if false;
+    }
+
+    // Private per-student progress
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProgress(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProgress(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName',
+          'unlockedVideoIds',
+          'availableUnlocks',
+          'ostCorrectCount',
+          'ostTotalAttempts',
+          'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    // Public student leaderboard summary (OST correct count & overall song high scores)
+    match /leaderboard/{userId} {
+      allow get: if isValidId(userId) && existing().isPublic == true;
+      allow list: if resource.data.isPublic == true;
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidLeaderboardEntry(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidLeaderboardEntry(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName',
+          'photoURL',
+          'ostCorrectCount',
+          'ostTotalAttempts',
+          'bestSingleScore',
+          'totalHighScore',
+          'songsPlayedCount',
+          'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    // Per-song high scores across all songs
+    match /songScores/{scoreId} {
+      allow get: if isValidId(scoreId) && existing().isPublic == true;
+      allow list: if resource.data.isPublic == true;
+      allow create: if isValidId(scoreId)
+        && isSignedIn()
+        && isValidSongHighScore(incoming())
+        && scoreId == (incoming().videoId + '__' + request.auth.uid)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(scoreId)
+        && isSignedIn()
+        && existing().userId == request.auth.uid
+        && isValidSongHighScore(incoming())
+        && incoming().userId == existing().userId
+        && incoming().videoId == existing().videoId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName',
+          'songTitle',
+          'highScore',
+          'maxCombo',
+          'accuracy',
+          'difficulty',
+          'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+  }
+}
